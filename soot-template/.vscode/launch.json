@@ -1,0 +1,12 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "java",
+            "name": "Run Soot App",
+            "request": "launch",
+            "mainClass": "com.template.soot.App",
+            "projectName": "soot-template"
+        }
+    ]
+}

@@ -190,15 +190,27 @@ static final Object BOT = new Object();
         {
             Block b=worklist.poll();
             
-            HashMap<Object,Object>def=new HashMap<>(this.def.get(b));
+            HashMap<Object,Object>def1=new HashMap<>(this.def.get(b));
             HashMap<Object,Object>in1=new HashMap<>();
-            HashMap<Object,Object>out1=new HashMap<>();
+            HashMap<Object,Object>out1=new HashMap<>(out.get(b));
             for(Block b1:b.getPreds())
-            {   
-                in.put(b,meet(in1.get(b1),this.out.get(b1)));
+            {   if(in1.isEmpty())
+                {
+                    in1.putAll(this.out.get(b1));
+                }
+                else
+                {
+                    in1=meet(in1,this.out.get(b1));
+                }
+  
 
             }
-            out.put(b,meet(in.get(b),def.get(b)));
+            in.put(b,in1);
+            out.put(b,new HashMap<>(in1));
+            for(Value v:def1.keySet())
+            {
+                out.get(b).put(v,def1.get(v));
+            }
             if(!out.get(b).equals(out1))
             {
                 for(Block b2:b.getSuccs())

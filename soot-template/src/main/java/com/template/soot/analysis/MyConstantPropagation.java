@@ -1,24 +1,28 @@
 package com.template.soot.analysis;
 
 import soot.Body;
+import soot.Local;
 import soot.SootMethod;
 import soot.Unit;
 import soot.Value;
+import soot.jimple.AddExpr;
 import soot.jimple.AssignStmt;
 import soot.jimple.BinopExpr;
 import soot.jimple.Constant;
+import soot.jimple.DivExpr;
+import soot.jimple.IdentityStmt;
 import soot.jimple.IntConstant;
+import soot.jimple.MulExpr;
 import soot.jimple.RemExpr;
 import soot.jimple.Stmt;
+import soot.jimple.SubExpr;
 import soot.toolkits.graph.BriefBlockGraph;
 import soot.toolkits.graph.Block;
 
-import java.util.ArrayDeque;
-import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedList;
 import java.util.List;
-import java.util.Map;
 import java.util.Queue;
 import java.util.Set;
 
@@ -30,85 +34,95 @@ public class MyConstantPropagation {
     // HashMap<Object,HashMap<Object,Object>>kill=new HashMap<>();
     HashMap<Object,HashSet<Object>>blocktostatements=new HashMap<>();
 
+    static final Object TOP = new Object();
+    static final Object BOT = new Object();
+
+    // every Local in the body -- used so all maps carry the same key set,
+    // which is what makes the out.equals(out1) fixpoint test sound
+    private final Set<Local> allLocals = new HashSet<>();
+
     public MyConstantPropagation(SootMethod method) {
         doAnalysis(method);
     }
-    static final Object TOP = new Object();
-static final Object BOT = new Object();
 
-            Object evaluate(Value rhs, Block b) {
-                if (!(rhs instanceof BinopExpr)) return BOT;
+    public HashMap<Object,Object> getIn(Block b)  { return in.get(b); }
+    public HashMap<Object,Object> getOut(Block b) { return out.get(b); }
 
-                Value leftop  = ((BinopExpr) rhs).getOp1();
-                Value rightop = ((BinopExpr) rhs).getOp2();
+    // Values in def/in/out are ONLY Integer, TOP or BOT -- never a soot Value.
+    Object evaluate(Value rhs, Block b) {
+        if (!(rhs instanceof BinopExpr)) return BOT;
 
-                if (leftop instanceof Constant && rightop instanceof Constant) {
-                    if (!(leftop instanceof IntConstant) || !(rightop instanceof IntConstant)) return BOT;
-                    int l = ((IntConstant) leftop).value;
-                    int r = ((IntConstant) rightop).value;
+        Value leftop  = ((BinopExpr) rhs).getOp1();
+        Value rightop = ((BinopExpr) rhs).getOp2();
 
-                    if (rhs instanceof AddExpr) return l + r;
-                    if (rhs instanceof SubExpr) return l - r;
-                    if (rhs instanceof MulExpr) return l * r;
-                    if (rhs instanceof DivExpr) return r == 0 ? BOT : l / r;
-                    if (rhs instanceof RemExpr) return r == 0 ? BOT : l % r;
-                    return BOT;
-                }
-                else if (leftop instanceof Constant && rightop instanceof Local) {
-                    if (!(leftop instanceof IntConstant)) return BOT;
-                    Object rv = def.get(b).get(rightop);
-                    if (rv == BOT) return BOT;
-                    if (rv == null || rv == TOP) return TOP;
-                    if (!(rv instanceof Integer)) return BOT;
+        if (leftop instanceof Constant && rightop instanceof Constant) {
+            if (!(leftop instanceof IntConstant) || !(rightop instanceof IntConstant)) return BOT;
+            int l = ((IntConstant) leftop).value;
+            int r = ((IntConstant) rightop).value;
 
-                    int l = ((IntConstant) leftop).value;
-                    int r = (Integer) rv;
+            if (rhs instanceof AddExpr) return l + r;
+            if (rhs instanceof SubExpr) return l - r;
+            if (rhs instanceof MulExpr) return l * r;
+            if (rhs instanceof DivExpr) return r == 0 ? BOT : l / r;
+            if (rhs instanceof RemExpr) return r == 0 ? BOT : l % r;
+            return BOT;
+        }
+        else if (leftop instanceof Constant && rightop instanceof Local) {
+            if (!(leftop instanceof IntConstant)) return BOT;
+            Object rv = def.get(b).get(rightop);
+            if (rv == BOT) return BOT;
+            if (rv == null || rv == TOP) return TOP;
+            if (!(rv instanceof Integer)) return BOT;
 
-                    if (rhs instanceof AddExpr) return l + r;
-                    if (rhs instanceof SubExpr) return l - r;
-                    if (rhs instanceof MulExpr) return l * r;
-                    if (rhs instanceof DivExpr) return r == 0 ? BOT : l / r;
-                    if (rhs instanceof RemExpr) return r == 0 ? BOT : l % r;
-                    return BOT;
-                }
-                else if (leftop instanceof Local && rightop instanceof Constant) {
-                    if (!(rightop instanceof IntConstant)) return BOT;
-                    Object lv = def.get(b).get(leftop);
-                    if (lv == BOT) return BOT;
-                    if (lv == null || lv == TOP) return TOP;
-                    if (!(lv instanceof Integer)) return BOT;
+            int l = ((IntConstant) leftop).value;
+            int r = (Integer) rv;
 
-                    int l = (Integer) lv;
-                    int r = ((IntConstant) rightop).value;
+            if (rhs instanceof AddExpr) return l + r;
+            if (rhs instanceof SubExpr) return l - r;
+            if (rhs instanceof MulExpr) return l * r;
+            if (rhs instanceof DivExpr) return r == 0 ? BOT : l / r;
+            if (rhs instanceof RemExpr) return r == 0 ? BOT : l % r;
+            return BOT;
+        }
+        else if (leftop instanceof Local && rightop instanceof Constant) {
+            if (!(rightop instanceof IntConstant)) return BOT;
+            Object lv = def.get(b).get(leftop);
+            if (lv == BOT) return BOT;
+            if (lv == null || lv == TOP) return TOP;
+            if (!(lv instanceof Integer)) return BOT;
 
-                    if (rhs instanceof AddExpr) return l + r;
-                    if (rhs instanceof SubExpr) return l - r;
-                    if (rhs instanceof MulExpr) return l * r;
-                    if (rhs instanceof DivExpr) return r == 0 ? BOT : l / r;
-                    if (rhs instanceof RemExpr) return r == 0 ? BOT : l % r;
-                    return BOT;
-                }
-                else if (leftop instanceof Local && rightop instanceof Local) {
-                    Object lv = def.get(b).get(leftop);
-                    Object rv = def.get(b).get(rightop);
+            int l = (Integer) lv;
+            int r = ((IntConstant) rightop).value;
 
-                    if (lv == BOT || rv == BOT) return BOT;                          // ⊥ dominates
-                    if (lv == null || lv == TOP || rv == null || rv == TOP) return TOP;
-                    if (!(lv instanceof Integer) || !(rv instanceof Integer)) return BOT;
+            if (rhs instanceof AddExpr) return l + r;
+            if (rhs instanceof SubExpr) return l - r;
+            if (rhs instanceof MulExpr) return l * r;
+            if (rhs instanceof DivExpr) return r == 0 ? BOT : l / r;
+            if (rhs instanceof RemExpr) return r == 0 ? BOT : l % r;
+            return BOT;
+        }
+        else if (leftop instanceof Local && rightop instanceof Local) {
+            Object lv = def.get(b).get(leftop);
+            Object rv = def.get(b).get(rightop);
 
-                    int l = (Integer) lv;
-                    int r = (Integer) rv;
+            if (lv == BOT || rv == BOT) return BOT;                          // bottom dominates
+            if (lv == null || lv == TOP || rv == null || rv == TOP) return TOP;
+            if (!(lv instanceof Integer) || !(rv instanceof Integer)) return BOT;
 
-                    if (rhs instanceof AddExpr) return l + r;
-                    if (rhs instanceof SubExpr) return l - r;
-                    if (rhs instanceof MulExpr) return l * r;
-                    if (rhs instanceof DivExpr) return r == 0 ? BOT : l / r;
-                    if (rhs instanceof RemExpr) return r == 0 ? BOT : l % r;
-                    return BOT;
-                }
+            int l = (Integer) lv;
+            int r = (Integer) rv;
 
-                return BOT;
-            }
+            if (rhs instanceof AddExpr) return l + r;
+            if (rhs instanceof SubExpr) return l - r;
+            if (rhs instanceof MulExpr) return l * r;
+            if (rhs instanceof DivExpr) return r == 0 ? BOT : l / r;
+            if (rhs instanceof RemExpr) return r == 0 ? BOT : l % r;
+            return BOT;
+        }
+
+        return BOT;
+    }
+
     HashMap<Object,Object> meet(HashMap<Object,Object> in1,HashMap<Object,Object> in2)
     {
         HashMap<Object,Object> result=new HashMap<>();
@@ -140,59 +154,32 @@ static final Object BOT = new Object();
         }
         return result;
     }
-    void doAnaylsis(SootMethod method)
+
+    void doAnalysis(SootMethod method)
     {
-        BriefBlockGraph blockgraph=new BriefBlockGraph(method.getActiveBody());
+        Body body=method.getActiveBody();
+        BriefBlockGraph blockgraph=new BriefBlockGraph(body);
         List<Block> blocks=blockgraph.getBlocks();
+        allLocals.addAll(body.getLocals());
+
+        // optimistic init: every local starts at TOP in every block
         for(Block b:blocks)
         {
-            in.put(b,new HashMap<>());
-            out.put(b,new HashMap<>());
-            def.put(b,new HashMap<>());
-            for(Unit u:b.getUnits())
-            {   
-                Statement s=(Statement)u;
-                if(s instanceof AssignStmt)
-                {
-                    Value leftop=s.getLeftOp();
-                    Value rightop=s.getRightOp();
-                    if(leftop instanceof Local)
-                    {
-                       in.get(b).put(leftop,'T');
-                       out.get(b).put(leftop,'T');
-                        if(rightop instanceof Constant)
-                        {
-                            def.get(b).put(leftop,rightop);
-                        }
-                        else if(rightop instanceof Local)
-                        {
-                            def.get(b).put(leftop,def.get(b).get(rightop));
-                        }
-                        else if(rightop instanceof BinopExpr)
-                        {
-                            def.get(b).put(leftop,evaluate(rightop));
-                        }
-                    }
-                    if(rightop instanceof Local)
-                    {in.get(b).put(rightop,'T');
-                    out.get(b).put(rightop,'T');
-                        
-                    }
-                    
-                    
-                }
-            }
-
-
+            HashMap<Object,Object> topmap=new HashMap<>();
+            for(Local l:allLocals)topmap.put(l,TOP);
+            in.put(b,new HashMap<>(topmap));
+            out.put(b,new HashMap<>(topmap));
+            def.put(b,new HashMap<>(topmap));
         }
+
         Queue<Block> worklist=new LinkedList<>(blocks);
         while(!worklist.isEmpty())
         {
             Block b=worklist.poll();
-            
-            HashMap<Object,Object>def1=new HashMap<>(this.def.get(b));
-            HashMap<Object,Object>in1=new HashMap<>();
+
             HashMap<Object,Object>out1=new HashMap<>(out.get(b));
+            HashMap<Object,Object>in1=new HashMap<>();
+
             for(Block b1:b.getPreds())
             {   if(in1.isEmpty())
                 {
@@ -202,12 +189,59 @@ static final Object BOT = new Object();
                 {
                     in1=meet(in1,this.out.get(b1));
                 }
-  
-
+            }
+            if(b.getPreds().isEmpty())          // entry block: nothing flows in
+            {
+                for(Local l:allLocals)in1.put(l,TOP);
             }
             in.put(b,in1);
+
+            // def[b] is recomputed on EVERY visit, seeded from the fresh IN[b],
+            // so a local defined in a predecessor is now visible here
+            HashMap<Object,Object>def1=new HashMap<>(in1);
+            def.put(b,def1);
+
+            for(Unit u:b.getUnits())
+            {
+                Stmt s=(Stmt)u;
+
+                if(s instanceof IdentityStmt)   // r0 := @this / @parameterN
+                {
+                    Value leftop=((IdentityStmt)s).getLeftOp();
+                    if(leftop instanceof Local)def1.put(leftop,BOT);
+                    continue;
+                }
+                if(!(s instanceof AssignStmt))continue;
+
+                Value leftop=((AssignStmt)s).getLeftOp();
+                Value rightop=((AssignStmt)s).getRightOp();
+                if(!(leftop instanceof Local))continue;   // field/array store defines no local
+
+                if(rightop instanceof IntConstant)
+                {
+                    def1.put(leftop,((IntConstant)rightop).value);
+                }
+                else if(rightop instanceof Constant)      // long/float/String/null
+                {
+                    def1.put(leftop,BOT);
+                }
+                else if(rightop instanceof Local)
+                {
+                    Object rv=def1.get(rightop);
+                    def1.put(leftop,rv==null?TOP:rv);
+                }
+                else if(rightop instanceof BinopExpr)
+                {
+                    def1.put(leftop,evaluate(rightop,b));
+                }
+                else                                      // invoke, field/array read, cast, new
+                {
+                    def1.put(leftop,BOT);
+                }
+            }
+
             out.put(b,new HashMap<>(in1));
-            for(Value v:def1.keySet())
+            for(Object v:def1.keySet())
             {
                 out.get(b).put(v,def1.get(v));
             }
@@ -219,7 +253,5 @@ static final Object BOT = new Object();
                 }
             }
         }
-
-    }    
-
+    }
 }

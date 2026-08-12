@@ -5,7 +5,10 @@ import soot.SootMethod;
 import soot.Unit;
 import soot.Value;
 import soot.jimple.AssignStmt;
+import soot.jimple.BinopExpr;
 import soot.jimple.Constant;
+import soot.jimple.IntConstant;
+import soot.jimple.RemExpr;
 import soot.jimple.Stmt;
 import soot.toolkits.graph.BriefBlockGraph;
 import soot.toolkits.graph.Block;
@@ -24,118 +27,187 @@ public class MyConstantPropagation {
     HashMap<Object,HashMap<Object,Object>>gen=new HashMap<>();
     HashMap<Object,HashMap<Object,Object>>out=new HashMap<>();
     HashMap<Object,HashMap<Object,Object>>in=new HashMap<>();
-    HashMap<Object,HashMap<Object,Object>>kill=new HashMap<>();
+    // HashMap<Object,HashMap<Object,Object>>kill=new HashMap<>();
     HashMap<Object,HashSet<Object>>blocktostatements=new HashMap<>();
 
     public MyConstantPropagation(SootMethod method) {
         doAnalysis(method);
     }
+    static final Object TOP = new Object();
+static final Object BOT = new Object();
 
-    @SuppressWarnings("unchecked")
-    HashMap<Object,Object>setdiff(HashMap<Object,Object>in1,HashMap<Object,Object>kill){
-        HashMap<Object,Object>res=new HashMap<>();
-        for(Object i:in1.keySet()){
-            if(!kill.containsKey(i)){
-                res.put(i,in1.get(i));
+            Object evaluate(Value rhs, Block b) {
+                if (!(rhs instanceof BinopExpr)) return BOT;
+
+                Value leftop  = ((BinopExpr) rhs).getOp1();
+                Value rightop = ((BinopExpr) rhs).getOp2();
+
+                if (leftop instanceof Constant && rightop instanceof Constant) {
+                    if (!(leftop instanceof IntConstant) || !(rightop instanceof IntConstant)) return BOT;
+                    int l = ((IntConstant) leftop).value;
+                    int r = ((IntConstant) rightop).value;
+
+                    if (rhs instanceof AddExpr) return l + r;
+                    if (rhs instanceof SubExpr) return l - r;
+                    if (rhs instanceof MulExpr) return l * r;
+                    if (rhs instanceof DivExpr) return r == 0 ? BOT : l / r;
+                    if (rhs instanceof RemExpr) return r == 0 ? BOT : l % r;
+                    return BOT;
+                }
+                else if (leftop instanceof Constant && rightop instanceof Local) {
+                    if (!(leftop instanceof IntConstant)) return BOT;
+                    Object rv = def.get(b).get(rightop);
+                    if (rv == BOT) return BOT;
+                    if (rv == null || rv == TOP) return TOP;
+                    if (!(rv instanceof Integer)) return BOT;
+
+                    int l = ((IntConstant) leftop).value;
+                    int r = (Integer) rv;
+
+                    if (rhs instanceof AddExpr) return l + r;
+                    if (rhs instanceof SubExpr) return l - r;
+                    if (rhs instanceof MulExpr) return l * r;
+                    if (rhs instanceof DivExpr) return r == 0 ? BOT : l / r;
+                    if (rhs instanceof RemExpr) return r == 0 ? BOT : l % r;
+                    return BOT;
+                }
+                else if (leftop instanceof Local && rightop instanceof Constant) {
+                    if (!(rightop instanceof IntConstant)) return BOT;
+                    Object lv = def.get(b).get(leftop);
+                    if (lv == BOT) return BOT;
+                    if (lv == null || lv == TOP) return TOP;
+                    if (!(lv instanceof Integer)) return BOT;
+
+                    int l = (Integer) lv;
+                    int r = ((IntConstant) rightop).value;
+
+                    if (rhs instanceof AddExpr) return l + r;
+                    if (rhs instanceof SubExpr) return l - r;
+                    if (rhs instanceof MulExpr) return l * r;
+                    if (rhs instanceof DivExpr) return r == 0 ? BOT : l / r;
+                    if (rhs instanceof RemExpr) return r == 0 ? BOT : l % r;
+                    return BOT;
+                }
+                else if (leftop instanceof Local && rightop instanceof Local) {
+                    Object lv = def.get(b).get(leftop);
+                    Object rv = def.get(b).get(rightop);
+
+                    if (lv == BOT || rv == BOT) return BOT;                          // ⊥ dominates
+                    if (lv == null || lv == TOP || rv == null || rv == TOP) return TOP;
+                    if (!(lv instanceof Integer) || !(rv instanceof Integer)) return BOT;
+
+                    int l = (Integer) lv;
+                    int r = (Integer) rv;
+
+                    if (rhs instanceof AddExpr) return l + r;
+                    if (rhs instanceof SubExpr) return l - r;
+                    if (rhs instanceof MulExpr) return l * r;
+                    if (rhs instanceof DivExpr) return r == 0 ? BOT : l / r;
+                    if (rhs instanceof RemExpr) return r == 0 ? BOT : l % r;
+                    return BOT;
+                }
+
+                return BOT;
+            }
+    HashMap<Object,Object> meet(HashMap<Object,Object> in1,HashMap<Object,Object> in2)
+    {
+        HashMap<Object,Object> result=new HashMap<>();
+        Set<Object> keys=new HashSet<>();
+        keys.addAll(in1.keySet());
+        keys.addAll(in2.keySet());
+        for(Object key:keys)
+        {
+            Object v1=in1.get(key);
+            Object v2=in2.get(key);
+            if(v1==null)v1=TOP;
+            if(v2==null)v2=TOP;
+            if(v1.equals(v2))
+            {
+                result.put(key,v1);
+            }
+            else if(v1.equals(TOP))
+            {
+                result.put(key,v2);
+            }
+            else if(v2.equals(TOP))
+            {
+                result.put(key,v1);
             }
             else
             {
-                Set<Object>killvalues=new HashSet<>((Collection<Object>) kill.get(i));
-                Set<Object>in1values=new HashSet<>((Collection<Object>) in1.get(i));
-
-                in1values.removeAll(killvalues);
-                if(!in1values.isEmpty()){
-                    res.put(i,in1values);
-                }
-            }
-
-        }
-        return res;
-    }
-    @SuppressWarnings("unchecked")
-    HashMap<Object,Object>union(HashMap<Object,Object>in1,HashMap<Object,Object>gen){
-        HashMap<Object,Object>res=new HashMap<>(in1);
-        for(Object i:gen.keySet()){
-            if(res.containsKey(i)){
-                Set<Object>resvalues=new HashSet<>((Collection<Object>) res.get(i));
-                Set<Object>genvalues=new HashSet<>((Collection<Object>) gen.get(i));
-                resvalues.addAll(genvalues);
-                res.put(i,resvalues);
-            }
-            else{
-                res.put(i,new HashMap<>((Map<Object,Object>) gen.get(i)));
+                result.put(key,BOT);
             }
         }
-        return res;
+        return result;
     }
-    void doAnalysis(SootMethod method) {
-        Body body = method.retrieveActiveBody();
-        BriefBlockGraph basicblock=new BriefBlockGraph(body);
-        List<Block> blocks = basicblock.getBlocks();
-        for(Block i:blocks){
-            gen.put(i,new HashMap<>());
-            for(Unit j:i.getUnits()){
-                blocktostatements.put(i,new HashSet<>());
-                blocktostatements.get(i).add(j);
-                def.put(j,new HashMap<>());
-                Stmt stmt = (Stmt) j;
-                if(stmt instanceof AssignStmt){
-                    AssignStmt assignStmt = (AssignStmt) stmt;
-                    Value leftOp = assignStmt.getLeftOp();
-                    Value rightOp = assignStmt.getRightOp();
-                    if(rightOp instanceof Constant){
-                        def.get(j).put(leftOp,rightOp);
-                        gen.get(i).put(leftOp,rightOp);
-                    }
-            }
-
-        }
-    }
-    //need to define kill
-   // Kill(b)=(Def(v2)-gen(b))U(Def(v2)-gen(b))U...U(Def(vn)-gen(b))//
-   for(Block b:blocks)
-   {    HashMap<Object,Object>gen1=new HashMap<>(gen.get(b));
-        for(Unit u:b.getUnits())
-        {   
-            for(Object v:gen1.keySet())
-            {
-                if(def.get(u).containsKey(v))
+    void doAnaylsis(SootMethod method)
+    {
+        BriefBlockGraph blockgraph=new BriefBlockGraph(method.getActiveBody());
+        List<Block> blocks=blockgraph.getBlocks();
+        for(Block b:blocks)
+        {
+            in.put(b,new HashMap<>());
+            out.put(b,new HashMap<>());
+            def.put(b,new HashMap<>());
+            for(Unit u:b.getUnits())
+            {   
+                Statement s=(Statement)u;
+                if(s instanceof AssignStmt)
                 {
-                    HashMap<Object,Object>kill1=new HashMap<>(setdiff(def.get(u),gen.get(b)));
-                    kill1.put(v,def.get(u).get(v));
-                    if(kill.containsKey(b))
+                    Value leftop=s.getLeftOp();
+                    Value rightop=s.getRightOp();
+                    if(leftop instanceof Local)
                     {
-                        HashMap<Object,Object>kill2=new HashMap<>(kill.get(b));
-                        kill2.putAll(kill1);
-                        kill.put(b,kill2);
+                       in.get(b).put(leftop,'T');
+                       out.get(b).put(leftop,'T');
+                        if(rightop instanceof Constant)
+                        {
+                            def.get(b).put(leftop,rightop);
+                        }
+                        else if(rightop instanceof Local)
+                        {
+                            def.get(b).put(leftop,def.get(b).get(rightop));
+                        }
+                        else if(rightop instanceof BinopExpr)
+                        {
+                            def.get(b).put(leftop,evaluate(rightop));
+                        }
                     }
-                    else
-                    {
-                        kill.put(b,kill1);
+                    if(rightop instanceof Local)
+                    {in.get(b).put(rightop,'T');
+                    out.get(b).put(rightop,'T');
+                        
                     }
+                    
+                    
                 }
-                   
+            }
+
+
+        }
+        Queue<Block> worklist=new LinkedList<>(blocks);
+        while(!worklist.isEmpty())
+        {
+            Block b=worklist.poll();
+            
+            HashMap<Object,Object>def=new HashMap<>(this.def.get(b));
+            HashMap<Object,Object>in1=new HashMap<>();
+            HashMap<Object,Object>out1=new HashMap<>();
+            for(Block b1:b.getPreds())
+            {   
+                in.put(b,meet(in1.get(b1),this.out.get(b1)));
+
+            }
+            out.put(b,meet(in.get(b),def.get(b)));
+            if(!out.get(b).equals(out1))
+            {
+                for(Block b2:b.getSuccs())
+                {
+                    worklist.add(b2);
                 }
             }
         }
 
-    Queue<Block> worklist = new ArrayDeque<>();
-    worklist.addAll(blocks);
-    while(!worklist.isEmpty()){
-        Block block=worklist.poll();
-        HashMap<Object,Object>in1=new HashMap<>();
-        List<Block> preds=block.getPreds();
-        for(Block pred:preds){
-            in1.putAll(out.get(pred));
-        }
-        HashMap<Object,Object>res=setdiff(in1,kill.get(block));
-        res=union(res,gen.get(block));
-        if(!res.equals(out.get(block))){
-            out.put(block,res);
-            List<Block> succs=block.getSuccs();
-            worklist.addAll(succs);
-        }
-        
-    }
-}
+    }    
+
 }

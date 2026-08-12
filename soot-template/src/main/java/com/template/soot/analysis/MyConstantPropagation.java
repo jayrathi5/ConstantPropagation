@@ -15,17 +15,11 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Queue;
 import java.util.Set;
 
 public class MyConstantPropagation {
-    private static final Object BOTTOM = new Object() {
-        @Override
-        public String toString() {
-            return "BOTTOM";
-        }
-    };
-
     HashMap<Object,HashMap<Object,Object>>def=new HashMap<>();
     HashMap<Object,HashMap<Object,Object>>gen=new HashMap<>();
     HashMap<Object,HashMap<Object,Object>>out=new HashMap<>();
@@ -58,30 +52,19 @@ public class MyConstantPropagation {
         }
         return res;
     }
-    // Meet operator: absent key = TOP.
-    //   TOP  meet value -> value
-    //   value meet TOP  -> value
-    //   v1 meet v1      -> v1        (same value on both sides)
-    //   v1 meet v2      -> BOTTOM    (different values -> not constant)
+    @SuppressWarnings("unchecked")
     HashMap<Object,Object>union(HashMap<Object,Object>in1,HashMap<Object,Object>gen){
-        HashMap<Object,Object>res=new HashMap<>();
-        Set<Object>keys=new HashSet<>();
-        keys.addAll(in1.keySet());
-        keys.addAll(gen.keySet());
-        for(Object key:keys){
-            Object v1=in1.get(key);  // null == TOP
-            Object v2=gen.get(key);  // null == TOP
-            Object merged;
-            if(v1==null){
-                merged=v2;
-            } else if(v2==null){
-                merged=v1;
-            } else if(v1.equals(v2)){
-                merged=v1;
-            } else {
-                merged=BOTTOM;
+        HashMap<Object,Object>res=new HashMap<>(in1);
+        for(Object i:gen.keySet()){
+            if(res.containsKey(i)){
+                Set<Object>resvalues=new HashSet<>((Collection<Object>) res.get(i));
+                Set<Object>genvalues=new HashSet<>((Collection<Object>) gen.get(i));
+                resvalues.addAll(genvalues);
+                res.put(i,resvalues);
             }
-            res.put(key,merged);
+            else{
+                res.put(i,new HashMap<>((Map<Object,Object>) gen.get(i)));
+            }
         }
         return res;
     }

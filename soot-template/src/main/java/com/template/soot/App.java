@@ -2,7 +2,7 @@ package com.template.soot;
 
 import soot.Body;
 import soot.G;
-import soot.Options;
+import soot.options.Options;
 import soot.PackManager;
 import soot.Scene;
 import soot.SootClass;
@@ -104,8 +104,7 @@ public class App {
                 System.out.println(body);
 
                 // ---- Run your custom analysis here ----
-                MyConstantPropagation cp = new MyConstantPropagation(
-                        new soot.toolkits.graph.BriefBlockGraph(body));
+                MyConstantPropagation cp = new MyConstantPropagation(sm);
                 cp.printResults();
             }
         }

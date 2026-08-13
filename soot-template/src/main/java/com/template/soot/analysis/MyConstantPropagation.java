@@ -41,12 +41,38 @@ public class MyConstantPropagation {
     // which is what makes the out.equals(out1) fixpoint test sound
     private final Set<Local> allLocals = new HashSet<>();
 
+    private List<Block> blocks;
+
     public MyConstantPropagation(SootMethod method) {
         doAnalysis(method);
     }
 
     public HashMap<Object,Object> getIn(Block b)  { return in.get(b); }
     public HashMap<Object,Object> getOut(Block b) { return out.get(b); }
+
+    private static String fmt(Object v) {
+        if (v == TOP) return "TOP";
+        if (v == BOT) return "BOT";
+        return String.valueOf(v);
+    }
+
+    public void printResults() {
+        for (Block b : blocks) {
+            System.out.println("Block " + b.getIndexInMethod() + " " + b.getHead() + " .. " + b.getTail());
+            System.out.println("  IN:  " + fmtMap(in.get(b)));
+            for (Unit u : b) System.out.println("    " + u);
+            System.out.println("  OUT: " + fmtMap(out.get(b)));
+        }
+    }
+
+    private String fmtMap(HashMap<Object,Object> m) {
+        StringBuilder sb = new StringBuilder("{");
+        for (Local l : allLocals) {
+            if (sb.length() > 1) sb.append(", ");
+            sb.append(l).append("=").append(fmt(m.get(l)));
+        }
+        return sb.append("}").toString();
+    }
 
     // Values in def/in/out are ONLY Integer, TOP or BOT -- never a soot Value.
     Object evaluate(Value rhs, Block b) {
@@ -160,6 +186,7 @@ public class MyConstantPropagation {
         Body body=method.getActiveBody();
         BriefBlockGraph blockgraph=new BriefBlockGraph(body);
         List<Block> blocks=blockgraph.getBlocks();
+        this.blocks=blocks;
         allLocals.addAll(body.getLocals());
 
         // optimistic init: every local starts at TOP in every block
@@ -201,7 +228,7 @@ public class MyConstantPropagation {
             HashMap<Object,Object>def1=new HashMap<>(in1);
             def.put(b,def1);
 
-            for(Unit u:b.getUnits())
+            for(Unit u:b)
             {
                 Stmt s=(Stmt)u;
 

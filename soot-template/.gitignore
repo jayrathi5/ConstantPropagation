@@ -7,3 +7,4 @@ target/
 .idea/
 sootOutput/
 *.log
+output*.txt

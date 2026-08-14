@@ -31,14 +31,10 @@ public class MyConstantPropagation {
     HashMap<Object,HashMap<Object,Object>>gen=new HashMap<>();
     HashMap<Object,HashMap<Object,Object>>out=new HashMap<>();
     HashMap<Object,HashMap<Object,Object>>in=new HashMap<>();
-    // HashMap<Object,HashMap<Object,Object>>kill=new HashMap<>();
     HashMap<Object,HashSet<Object>>blocktostatements=new HashMap<>();
 
     static final Object TOP = new Object();
     static final Object BOT = new Object();
-
-    // every Local in the body -- used so all maps carry the same key set,
-    // which is what makes the out.equals(out1) fixpoint test sound
     private final Set<Local> allLocals = new HashSet<>();
 
     private List<Block> blocks;
@@ -73,11 +69,8 @@ public class MyConstantPropagation {
         }
         return sb.append("}").toString();
     }
-
-    // Values in def/in/out are ONLY Integer, TOP or BOT -- never a soot Value.
     Object evaluate(Value rhs, Block b) {
         if (!(rhs instanceof BinopExpr)) return BOT;
-
         Value leftop  = ((BinopExpr) rhs).getOp1();
         Value rightop = ((BinopExpr) rhs).getOp2();
 
@@ -189,7 +182,7 @@ public class MyConstantPropagation {
         this.blocks=blocks;
         allLocals.addAll(body.getLocals());
 
-        // optimistic init: every local starts at TOP in every block
+    
         for(Block b:blocks)
         {
             HashMap<Object,Object> topmap=new HashMap<>();
@@ -217,14 +210,13 @@ public class MyConstantPropagation {
                     in1=meet(in1,this.out.get(b1));
                 }
             }
-            if(b.getPreds().isEmpty())          // entry block: nothing flows in
+            if(b.getPreds().isEmpty())       
             {
                 for(Local l:allLocals)in1.put(l,TOP);
             }
             in.put(b,in1);
 
-            // def[b] is recomputed on EVERY visit, seeded from the fresh IN[b],
-            // so a local defined in a predecessor is now visible here
+    
             HashMap<Object,Object>def1=new HashMap<>(in1);
             def.put(b,def1);
 
@@ -232,23 +224,23 @@ public class MyConstantPropagation {
             {
                 Stmt s=(Stmt)u;
 
-                if(s instanceof IdentityStmt)   // r0 := @this / @parameterN
+                if(s instanceof IdentityStmt)
                 {
                     Value leftop=((IdentityStmt)s).getLeftOp();
-                    if(leftop instanceof Local)def1.put(leftop,BOT);
+                    if(leftop instanceof Local)def1.put(leftop,BOT);//just to handle this keyword and any other because it is allocated dynamically and we don't know its value at compile time.
                     continue;
                 }
                 if(!(s instanceof AssignStmt))continue;
 
                 Value leftop=((AssignStmt)s).getLeftOp();
                 Value rightop=((AssignStmt)s).getRightOp();
-                if(!(leftop instanceof Local))continue;   // field/array store defines no local
+                if(!(leftop instanceof Local))continue;   
 
                 if(rightop instanceof IntConstant)
                 {
                     def1.put(leftop,((IntConstant)rightop).value);
                 }
-                else if(rightop instanceof Constant)      // long/float/String/null
+                else if(rightop instanceof Constant)     
                 {
                     def1.put(leftop,BOT);
                 }
@@ -261,7 +253,7 @@ public class MyConstantPropagation {
                 {
                     def1.put(leftop,evaluate(rightop,b));
                 }
-                else                                      // invoke, field/array read, cast, new
+                else                                      
                 {
                     def1.put(leftop,BOT);
                 }
